@@ -25,7 +25,7 @@ def resolve_required_host_dir(path: str, label: str, env_var: str | None = None)
     if os.path.isfile(resolved):
         raise InfraFailure(
             f"{label} 路径是文件而非目录: {resolved}{hint}\n"
-            f"请删除该文件后运行 .\\.cache\\cache_claude.ps1（或对应缓存脚本）生成目录"
+            f"请删除该文件后创建所需缓存目录"
         )
     raise InfraFailure(f"{label} 不存在: {resolved}{hint}")
 

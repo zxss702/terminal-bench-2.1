@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import threading
 from dataclasses import dataclass, field
 from typing import Any
@@ -13,7 +14,7 @@ try:
 except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib  # type: ignore
 
-from .config import TASKS_DIR, TRAJ_DIR
+from .config import SAMPLE_SEED, SAMPLE_SIZE, TASKS_DIR, TRAJ_DIR
 
 
 _EVAL_LOCK = threading.Lock()
@@ -190,6 +191,25 @@ def load_all_tasks() -> list[TaskInfo]:
         load_task(name, i)
         for i, name in enumerate(list_task_names(), start=1)
     ]
+
+
+def sample_tasks(
+    n: int = SAMPLE_SIZE,
+    seed: int = SAMPLE_SEED,
+) -> list[TaskInfo]:
+    """Fixed-seed random sample of n tasks (alphabetical corpus, reproducible)."""
+    names = list_task_names()
+    if not names:
+        return []
+    if n > len(names):
+        raise ValueError(
+            f"SAMPLE_SIZE={n} exceeds corpus size {len(names)}"
+        )
+    rng = random.Random(seed)
+    chosen = sorted(rng.sample(names, n))
+    # index = 1-based position in the full alphabetical corpus
+    rank = {name: i for i, name in enumerate(names, start=1)}
+    return [load_task(name, rank[name]) for name in chosen]
 
 
 def traj_agent_dir(agent_id: str) -> str:

@@ -1,6 +1,9 @@
-"""Paths and constants for the DIY Docker harness (Terminal-Bench 2.1)."""
+"""Paths and constants for the DIY Docker harness (神衍 2×2 消融)."""
+
+from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -13,16 +16,41 @@ BENCH_DIR = TASKS_DIR
 TRAJ_DIR = os.path.join(PROJECT_ROOT, "traj")
 CACHE_DIR = os.path.join(PROJECT_ROOT, ".cache")
 
-LOGORYTHIA_PACKAGE_SRC = (
-    os.getenv("LOGORYTHIA_PACKAGE_SRC", "").strip()
-    or os.path.join(PROJECT_ROOT, "logorythia_linux_x86.zip")
-)
+# Fixed-seed random sample of the 89-task corpus for 2×2 ablation.
+SAMPLE_SIZE = 30
+SAMPLE_SEED = 42
+
 LOGORYTHIA_PACKAGE_DEST = "/logorythia_linux_x86.zip"
 LOGORYTHIA_INSTALL_SCRIPT_SRC = os.path.join(PROJECT_ROOT, "env_install_logorythia.sh")
 LOGORYTHIA_INSTALL_SCRIPT_DEST = "/env_install_logorythia.sh"
-AGENT_INFO_SRC = os.path.join(PROJECT_ROOT, "syAgentInfo.json")
 AGENT_INFO_DEST_DIR = "/root/Documents/Logorythia"
 AGENT_INFO_DEST = f"{AGENT_INFO_DEST_DIR}/syAgentInfo.json"
+
+
+@dataclass(frozen=True)
+class LogorythiaVariant:
+    agent_id: str
+    flag: str
+    package_src: str
+    info_src: str
+
+
+def _variant(n: int) -> LogorythiaVariant:
+    return LogorythiaVariant(
+        agent_id=f"logorythia{n}",
+        flag=f"sy{n}",
+        package_src=os.path.join(PROJECT_ROOT, f"logorythia_linux_x86{n}.zip"),
+        info_src=os.path.join(PROJECT_ROOT, f"syAgentInfo{n}.json"),
+    )
+
+
+LOGORYTHIA_VARIANTS: tuple[LogorythiaVariant, ...] = tuple(
+    _variant(n) for n in (1, 2, 3, 4)
+)
+LOGORYTHIA_VARIANT_BY_ID: dict[str, LogorythiaVariant] = {
+    v.agent_id: v for v in LOGORYTHIA_VARIANTS
+}
+ALL_AGENT_IDS: tuple[str, ...] = tuple(v.agent_id for v in LOGORYTHIA_VARIANTS)
 
 COMMON_INSTALL_SCRIPT_SRC = os.path.join(PROJECT_ROOT, "env_install_common.sh")
 COMMON_INSTALL_SCRIPT_DEST = "/env_install_common.sh"
@@ -32,24 +60,10 @@ AGENT_ENV_DOCKERFILE = os.path.join(PROJECT_ROOT, "harness", "Dockerfile.agent-e
 AGENT_ENV_MARKER = "/opt/tb2-agent.ok"
 AGENTS_CACHE_DEST = "/agent-packages"
 
-CLAUDE_INSTALL_SCRIPT_SRC = os.path.join(PROJECT_ROOT, "env_install_claude.sh")
-CLAUDE_INSTALL_SCRIPT_DEST = "/env_install_claude.sh"
-CLAUDE_SETTINGS_SRC = os.path.join(PROJECT_ROOT, "claude_settings.json")
-CLAUDE_CACHE_DIR = (
-    os.getenv("CLAUDE_CACHE_DIR", "").strip()
-    or os.path.join(CACHE_DIR, "claude-code")
-)
-CLAUDE_PACKAGES_DEST = "/claude-packages"
-
 # Copied into Dockerfile.agent-env as env_install_agent.sh.
 AGENT_INSTALL_SCRIPTS = {
-    "autogen": os.path.join(PROJECT_ROOT, "env_install_auto.sh"),
-    "swe-agent": os.path.join(PROJECT_ROOT, "env_install_swe.sh"),
-    "agentflow": os.path.join(PROJECT_ROOT, "env_install_agentflow.sh"),
-    "claude-code": CLAUDE_INSTALL_SCRIPT_SRC,
-    "logorythia": LOGORYTHIA_INSTALL_SCRIPT_SRC,
+    v.agent_id: LOGORYTHIA_INSTALL_SCRIPT_SRC for v in LOGORYTHIA_VARIANTS
 }
-AGENTS_NEED_PYTHON_310 = frozenset({"autogen", "swe-agent"})
 
 DNF_CACHER_PORT = os.getenv("TB2_DNF_CACHER_PORT", "3144").strip() or "3144"
 DNF_CACHER_HOST = (
@@ -64,8 +78,7 @@ DNF_CACHER_URL = (
 AGENTS_CACHE_DIR = os.path.join(CACHE_DIR, "agents")
 DNF_CACHER_CACHE_DIR = os.path.join(CACHE_DIR, "dnf-cacher")
 
-# Linux/amd64 pip HTTP+wheel cache (populated by scripts/cache_agent_packages.ps1).
-# Do not reuse the Windows user profile ~/.cache/pip.
+# Linux/amd64 pip HTTP+wheel cache (BuildKit id=tb2-pip backup on host).
 PIP_CACHE_DIR = (
     os.getenv("TB2_PIP_CACHE_DIR", "").strip()
     or os.path.join(CACHE_DIR, "pip")
@@ -85,33 +98,6 @@ VEP_APIS_CACHE_DIR = (
     os.getenv("TB2_VEP_APIS_CACHE_DIR", "").strip()
     or os.path.join(CACHE_DIR, "vep-apis")
 )
-
-# DeepSeek OpenAI-compatible endpoint for comparison agents.
-DEEPSEEK_BASE_URL = os.getenv(
-    "TB2_DEEPSEEK_BASE_URL", "https://api.deepseek.com"
-).strip() or "https://api.deepseek.com"
-DEEPSEEK_MODEL = os.getenv("TB2_DEEPSEEK_MODEL", "deepseek-v4-flash-vision-exp").strip() or (
-    "deepseek-v4-flash-vision-exp"
-)
-# Claude Code talks Anthropic Messages via DeepSeek's /anthropic gateway.
-ANTHROPIC_BASE_URL = os.getenv(
-    "TB2_ANTHROPIC_BASE_URL", "https://api.deepseek.com/anthropic"
-).strip() or "https://api.deepseek.com/anthropic"
-
-
-def openai_compatible_base_url(root: str | None = None) -> str:
-    """Return an OpenAI SDK base_url that already ends with /v1 (no double suffix)."""
-    url = (root or DEEPSEEK_BASE_URL).rstrip("/")
-    return url if url.endswith("/v1") else f"{url}/v1"
-
-
-API_KEYS = {
-    "logorythia": "sk-d00e19ca51394eb891d02236e4ad7af7",
-    "swe-agent": "sk-9da9ad62f8ee4df9a47670ae144eb50a",
-    "autogen": "sk-8475daef219e4c29add745446b807ce0",
-    "agentflow": "sk-0b6ff99cafc44f1ab5bedbdcadb3e8e9",
-    "claude-code": "sk-d9a22952aba94967bec9164f09fe3b04",
-}
 
 PROXY_HOST_URL = (
     os.getenv("TB2_PROXY", "").strip()
@@ -158,10 +144,5 @@ REMOVE_PULLED_IMAGES = (not KEEP_TASK_IMAGES) and _REMOVE_PULLED_RAW not in {
     "off",
 }
 
-AGENT_FLAG_MAP = {
-    "logorythia": "logorythia",
-    "swe": "swe-agent",
-    "auto": "autogen",
-    "agentflow": "agentflow",
-    "claude": "claude-code",
-}
+# CLI flag name → agent_id (e.g. sy1 → logorythia1).
+AGENT_FLAG_MAP = {v.flag: v.agent_id for v in LOGORYTHIA_VARIANTS}

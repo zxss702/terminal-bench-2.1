@@ -1,4 +1,4 @@
-"""Logorythia (神衍) adapter — install package, place syAgentInfo, run CLI."""
+"""Logorythia (神衍) adapter — per-variant zip + syAgentInfo, run CLI."""
 
 from __future__ import annotations
 
@@ -9,11 +9,10 @@ import textwrap
 from ..config import (
     AGENT_INFO_DEST,
     AGENT_INFO_DEST_DIR,
-    AGENT_INFO_SRC,
     LOGORYTHIA_INSTALL_SCRIPT_DEST,
     LOGORYTHIA_INSTALL_SCRIPT_SRC,
     LOGORYTHIA_PACKAGE_DEST,
-    LOGORYTHIA_PACKAGE_SRC,
+    LogorythiaVariant,
 )
 from ..core import TaskInfo
 from .base import AgentAdapter
@@ -33,8 +32,10 @@ from .common import (
 
 
 class LogorythiaAdapter(AgentAdapter):
-    id = "logorythia"
-    display_name = "logorythia"
+    def __init__(self, variant: LogorythiaVariant) -> None:
+        self.variant = variant
+        self.id = variant.agent_id
+        self.display_name = variant.agent_id
 
     def prepare_run_dir(self, run_dir: str, task: TaskInfo) -> None:
         os.makedirs(run_dir, exist_ok=True)
@@ -45,14 +46,16 @@ class LogorythiaAdapter(AgentAdapter):
         )
         shutil.copy2(task.instruction_path, os.path.join(run_dir, "prompt.txt"))
 
-        # 神衍只读配置文件：token / thinkLevel 等都在 syAgentInfo.json 里改好，这里原样拷贝。
-        shutil.copy2(AGENT_INFO_SRC, os.path.join(run_dir, "syAgentInfo.json"))
+        # 变体配置原样拷贝；容器内目标文件名固定为 syAgentInfo.json。
+        info_src = resolve_required_host_file(
+            self.variant.info_src, f"{self.id} syAgentInfo"
+        )
+        shutil.copy2(info_src, os.path.join(run_dir, "syAgentInfo.json"))
 
     def install_mounts(self) -> list[tuple[str, str, str]]:
         package = resolve_required_host_file(
-            LOGORYTHIA_PACKAGE_SRC,
-            "Logorythia 安装包",
-            env_var="LOGORYTHIA_PACKAGE_SRC",
+            self.variant.package_src,
+            f"{self.id} 安装包",
         )
         install_script = resolve_required_host_file(
             LOGORYTHIA_INSTALL_SCRIPT_SRC, "env_install_logorythia.sh"
@@ -79,7 +82,7 @@ class LogorythiaAdapter(AgentAdapter):
                 INSTALL_SH=/run/env_install_logorythia.sh
             fi
             {skip_baked_agent_install_cmd(f'''
-            echo "[1/3] 安装 logorythia agent..."
+            echo "[1/3] 安装 logorythia agent ({self.id})..."
             if ! PACKAGE_PATH="{LOGORYTHIA_PACKAGE_DEST}" sh "$INSTALL_SH"; then
                 echo "[ERROR] logorythia 安装失败"
                 exit 1

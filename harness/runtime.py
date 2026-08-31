@@ -18,16 +18,13 @@ from typing import TypeVar
 
 import yaml
 
-from .agent_packages_cache import AGENTFLOW_SRC_DIR, resolve_agentflow_src_ready
 from .agents import get_adapter
 from .agents.base_utils import InfraFailure, ensure_lf_script_copy
 from .config import (
     AGENT_ENV_DOCKERFILE,
     AGENT_FLAG_MAP,
     AGENT_INSTALL_SCRIPTS,
-    AGENTS_NEED_PYTHON_310,
     CLASH_HOST_URL,
-    CLAUDE_CACHE_DIR,
     COMMON_ENV_DOCKERFILE,
     COMMON_INSTALL_SCRIPT_SRC,
     DOCKER_AGENT_LABEL_KEY,
@@ -38,7 +35,7 @@ from .config import (
     INSTALL_BUDGET_SEC,
     KEEP_TASK_IMAGES,
     LOCAL_IMAGE_PREFIX,
-    LOGORYTHIA_PACKAGE_SRC,
+    LOGORYTHIA_VARIANT_BY_ID,
     PROXY_NO_PROXY,
     RETRY_SLEEP_SEC,
     TRAJ_DIR,
@@ -676,43 +673,6 @@ def ensure_common_env_image(task: TaskInfo, base_image: str, action_log: str) ->
         return tag
 
 
-def _common_env_python_ge_310(image: str, action_log: str) -> bool:
-    """True if common-env venv/system python is >= 3.10."""
-    script = (
-        "py=/opt/tb2-venv/bin/python; "
-        "if [ ! -x \"$py\" ]; then py=python3; fi; "
-        "exec \"$py\" -c \"import sys; "
-        "raise SystemExit(0 if sys.version_info >= (3, 10) else 1)\""
-    )
-    cmd = [
-        "docker",
-        "run",
-        "--rm",
-        "--platform",
-        "linux/amd64",
-        "--entrypoint",
-        "/bin/sh",
-        image,
-        "-c",
-        script,
-    ]
-    try:
-        result = run_captured(cmd, timeout=90)
-    except subprocess.TimeoutExpired:
-        append_action_log(action_log, f"python probe timed out on {image}")
-        return False
-    except Exception as exc:
-        append_action_log(action_log, f"python probe failed on {image}: {exc}")
-        return False
-    ok = bool(result.returncode == 0)
-    append_action_log(
-        action_log,
-        f"python >=3.10 probe on {image}: {'yes' if ok else 'no'} "
-        f"(exit={result.returncode})",
-    )
-    return ok
-
-
 def _image_inspect_text(ref: str, fmt: str) -> str:
     out = run_best_effort(["docker", "image", "inspect", ref, "--format", fmt])
     if not out or out.returncode != 0:
@@ -730,37 +690,12 @@ def _populate_agent_build_ctx(agent_id: str, ctx: str) -> None:
         raise InfraFailure(f"missing env_install script for {agent_id}: {script_src}")
     ensure_lf_script_copy(script_src, os.path.join(ctx, "env_install_agent.sh"))
 
-    ignore = shutil.ignore_patterns(
-        ".git", "__pycache__", ".venv", "*.pyc", ".mypy_cache"
-    )
-    if agent_id == "agentflow":
-        if not resolve_agentflow_src_ready():
-            raise InfraFailure(
-                f"AgentFlow source missing ({AGENTFLOW_SRC_DIR}); "
-                "run .\\.cache\\cache_agent_packages.ps1"
-            )
-        shutil.copytree(
-            AGENTFLOW_SRC_DIR,
-            os.path.join(extra, "agentflow"),
-            ignore=ignore,
-        )
-    elif agent_id == "claude-code":
-        if not os.path.isdir(CLAUDE_CACHE_DIR):
-            raise InfraFailure(
-                f"Claude Code cache missing ({CLAUDE_CACHE_DIR}); "
-                "run .\\.cache\\cache_claude.ps1"
-            )
-        shutil.copytree(
-            CLAUDE_CACHE_DIR,
-            os.path.join(extra, "claude-packages"),
-            ignore=ignore,
-        )
-    elif agent_id == "logorythia":
-        if not os.path.isfile(LOGORYTHIA_PACKAGE_SRC):
-            raise InfraFailure(
-                f"Logorythia package missing ({LOGORYTHIA_PACKAGE_SRC})"
-            )
-        shutil.copy2(LOGORYTHIA_PACKAGE_SRC, os.path.join(extra, "logorythia.zip"))
+    variant = LOGORYTHIA_VARIANT_BY_ID.get(agent_id)
+    if variant is None:
+        raise InfraFailure(f"unknown logorythia variant: {agent_id}")
+    if not os.path.isfile(variant.package_src):
+        raise InfraFailure(f"Logorythia package missing ({variant.package_src})")
+    shutil.copy2(variant.package_src, os.path.join(extra, "logorythia.zip"))
 
 
 def ensure_agent_env_image(
@@ -769,11 +704,7 @@ def ensure_agent_env_image(
     agent_id: str,
     action_log: str,
 ) -> str:
-    """Bake agent install into `{task}:{agent_id}` using BuildKit cache id=tb2-pip.
-
-    AutoGen / swe-agent skip the layer when common-env Python is < 3.10 and
-    keep running from common-env (entry script records python_lt_3_10).
-    """
+    """Bake agent install into `{task}:{agent_id}` using BuildKit cache id=tb2-pip."""
     tag = agent_env_image_tag(task, agent_id)
     cache_key = f"{task.name}::{agent_id}"
     lock = _lock_for_image_key(cache_key)
@@ -782,18 +713,6 @@ def ensure_agent_env_image(
             cached = _IMAGE_CACHE.get(cache_key)
         if cached:
             return cached
-
-        if agent_id in AGENTS_NEED_PYTHON_310 and not _common_env_python_ge_310(
-            common_image, action_log
-        ):
-            append_action_log(
-                action_log,
-                f"skip agent-env bake for {agent_id}: python < 3.10; "
-                f"using {common_image}",
-            )
-            with _IMAGE_LOCK:
-                _IMAGE_CACHE[cache_key] = common_image
-            return common_image
 
         if docker_image_present(tag):
             env_text = _image_inspect_text(tag, "{{json .Config.Env}}")

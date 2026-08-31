@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Terminal-Bench 2.1 multi-agent evaluation entry (Windows + Docker DIY).
+"""神衍 2×2 消融评测入口 (Windows + Docker DIY).
 
 Usage:
-    python run_bench.py <start> [--end M] --logorythia --swe --auto --agentflow --claude
-    python run_bench.py 1 --end 10 --logorythia --claude --redo
+    python run_bench.py
+    python run_bench.py 1 --end 8
+    python run_bench.py 1 --end 8 --sy1 --n-concurrent 4
+    python run_bench.py --sy3 --redo
 """
 
 from harness import main
