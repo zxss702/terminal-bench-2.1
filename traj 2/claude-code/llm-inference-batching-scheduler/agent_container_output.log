@@ -1,0 +1,37 @@
+
+===== agent attempt container=tb2-5bd643-llm-inference-batchi-claude-code-age-62ea67b4 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[1/3] 安装 Claude Code agent...
+[INFO][claude] installing claude from /claude-packages/linux-x64/claude...
+[INFO][claude] agent ready: /usr/local/bin/claude
+2.1.218 (Claude Code)
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 1800s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=1800s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Both plans are complete and validated. Every constraint and performance threshold is satisfied with positive margin across all metrics.
+
+## Summary
+
+I implemented a **shape-aware LLM inference batching scheduler** in `/app/task_file/scripts/opt_packer.py` and produced the two deliverable plan files.
+
+**Approach** — I analyzed the cost model and found the key facts:
+1. **Decode cost dominates** and depends only on each batch's *actual* `S_max` (max aligned prompt) and `G_max` (max gen length) — *not* on the shape field. So the 8-shape cap limits only compile cost, not how tight the decode batching can be.
+2. **Prefill cost and prefill padding are fixed** (independent of packing); the minimum `pad_ratio` is determined purely by `align(prompt,64)`.
+3. The three pressure points conflict: **cost** wants many tight (S,G)-homogeneous batches, but **sequential_timecost** (sum of per-batch max latencies) wants *few* batches. `pad_ratio` has almost no budget (only ~2.8k decode-padding tokens for bucket 1), so it's the binding constraint.
+
+**Algorithm**: start from the cost-optimal grouping of one batch per exact (S,G) pair, then greedily merge batch pairs, at each step picking the merge with the highest `seq_saved / pad_added` efficiency. This drives sequential_timecost down while spending the scarce pad budget where it buys the most. A pool of 8 global shape anchors covers every batch's `S_max`, satisfying the shape cap without inflating decode cost.
+
+**Results vs. thresholds** (all PASS):
+
+| Bucket | Cost | Pad | P95 | Seq |
+|--------|------|-----|-----|-----|
+| b1 | 2.865e11 / 3.0e11 (4.5%) | 0.050 / 0.055 (9.1%) | 2.036e6 / 2.1e6 (3.1%) | 2.54e8 / 2.7e8 (6.0%) |
+| b2 | 4.538e10 / 4.8e10 (5.4%) | 0.136 / 0.15 (9.1%) | 1.953e5 / 2.1e5 (7.0%) | 2.89e7 / 3.2e7 (9.6%) |
+
+All constraints verified: every request included exactly once, shapes multiples of 64 and ≥ each request's aligned prompt, identical shape within each batch, and exactly 8 unique shapes across both buckets. Input files are untouched.
+Agent 阶段完成

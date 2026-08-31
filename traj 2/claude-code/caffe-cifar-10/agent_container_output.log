@@ -1,0 +1,34 @@
+
+===== agent attempt container=tb2-5bd643-caffe-cifar-10-claude-code-age-9cd9fd47 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 3600s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=3600s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Done. Caffe 1.0.0 is installed at `/app/caffe`, and a CNN is trained on CIFAR-10 satisfying all the constraints.
+
+## Summary
+
+**Build**
+- Cloned BVLC/Caffe at tag `1.0` (= release **1.0.0**) into `/app/caffe`; `caffe version 1.0.0` confirmed.
+- Built **CPU-only** with CMake: `CPU_ONLY=ON`, OpenBLAS, LMDB/LevelDB, no CUDA/OpenCV/Python/Matlab. Required one compatibility patch for the modern system (protobuf `SetTotalBytesLimit` signature change on this Ubuntu 24.04).
+
+**Data**
+- The official Toronto mirror was ~100 KB/s (would take ~25 min), so I pulled CIFAR-10 from the fast HuggingFace CDN and generated Caffe's Kriz-format `.bin` files (`data_batch_1..5.bin`, `test_batch.bin`), then converted to LMDB with Caffe's own `convert_cifar_data`. Verified correctness: per-channel means are exactly the canonical CIFAR-10 values (R=125.3, G=123.0, B=113.9), label counts are balanced, and class means differ strongly. Since `compute_image_mean` was built with OpenCV off, I generated `mean.binaryproto` (a valid BlobProto) myself.
+
+**Training** (`examples/cifar10/cifar10_quick_solver.prototxt`)
+- CPU, `max_iter: 500`, `snapshot: 500`, `test_iter: 100`, `test_interval: 500`. 500 iterations × batch 100 = 1 full epoch.
+- I ran into a genuine issue: the stock quick-net init (`gaussian` std 0.0001 on `conv1`) with a higher LR was giving saturated/huge activations (init loss ~30) that stall. The proven reference config — original Gaussian fillers + `base_lr: 0.001` — learns cleanly. I kept exactly that.
+
+**Results** (written to `/app/caffe/training_output.txt`)
+- Iter 500 **test accuracy (100 iterations = full 10,000 test images): 55.45%** (> 45% ✓)
+- Last train accuracy ≈ 51% — test (55.45%) is **above** train, so it's no more than 5% below train ✓ (difference 4.45% on any interpretation)
+- Model saved: `examples/cifar10/cifar10_quick_iter_500.caffemodel` ✓ (with matching `.solverstate`)
+
+One consistency note: the performance issue you'd notice is that training runs fast only with single-threaded OpenBLAS (`OPENBLAS_NUM_THREADS=1`) — the default 16-thread OpenBLAS thrash made it ~100× slower on this WSL2 16-core machine, so that env var is what makes the ~2-minute training feasible.
+Agent 阶段完成

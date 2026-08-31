@@ -1,0 +1,47 @@
+
+===== agent attempt container=tb2-5bd643-configure-git-webser-claude-code-age-2e05932d =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 900s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=900s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Everything works end-to-end. The full pipeline is set up and verified:
+
+## What I set up
+
+**1. Bare git repo — `/git/server`** (matches your clone path `user@server:/git/server`)
+- Default branch is `master`, created as a bare repo.
+
+**2. Web docroot — `/srv/www`**
+- A `post-receive` hook (`.git/hooks/post-receive`) checks out the pushed `master` branch into `/srv/www` on every push.
+
+**3. HTTP server on port 8080**
+- Python `http.server` serving `/srv/www`, running in the background.
+
+## Verified
+
+The push → serve round-trip works. After
+```
+echo "hello world" > hello.html
+git add hello.html
+git commit -m "add hello.html"
+git push origin master
+```
+- `/srv/www/hello.html` is created and contains `hello world`
+- `curl http://localhost:8080/hello.html` → **HTTP 200**, body `hello world`
+
+## One note on the SSH leg
+
+This container has **no `ssh` binary**, so I validated the repo+hook+web pipeline with a local-path clone (`git clone /git/server`). The SSH transport (`user@server:/git/server`) is exactly the "login" part you said you'd wire up. For it to work, the server needs a running `sshd` and the `user` you log in as needs read/write access to `/git/server` — that's all on your side.
+
+Two things to keep in mind once SSH is your job:
+- The clone target `/git/server` must be the bare repo I created (already is; nothing to do on the git side).
+- If you ever push a branch other than `master`, the hook only exports `master` — let me know if you want it to export the pushed branch or serve all branches.
+
+Want me to also add a systemd-style service file so the web server survives a reboot, or wire the hook to export any pushed branch?
+Agent 阶段完成

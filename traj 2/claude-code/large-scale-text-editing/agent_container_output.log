@@ -1,0 +1,37 @@
+
+===== agent attempt container=tb2-5bd643-large-scale-text-edi-claude-code-age-2ed60051 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[1/3] 安装 Claude Code agent...
+[INFO][claude] installing claude from /claude-packages/linux-x64/claude...
+[INFO][claude] agent ready: /usr/local/bin/claude
+2.1.218 (Claude Code)
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 1200s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=1200s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+The "DISALLOWED LINE FOUND" is a false positive — my audit grep incorrectly required setreg lines to be exactly `call setreg` with nothing after. The setreg lines match the allowed form `call setreg('a', "keystrokes")`. Everything is compliant.
+
+## Done
+
+`/app/apply_macros.vim` transforms `input.csv` to match `expected.csv` byte-for-byte.
+
+**The transformation** (all 1M lines, uniformly 3 comma-separated columns): trim whitespace, uppercase each field, reverse to `field3;field2;field1`, and append `;OK`.
+
+**Three distinct macros, 78 total keystrokes** (< 200):
+| Reg | Keystrokes | Effect |
+|-----|-----------|--------|
+| `a` | 11 | `:s/.*/\U&/` — uppercase the whole line |
+| `b` | 57 | `:s/\s*\(\w*\)\s*,\s*\(\w*\)\s*,\s*\(\w*\)\s*/\3;\2;\1/` — trim spaces, reverse fields, comma→`;` |
+| `c` | 10 | `:s/$/;OK/` — append `;OK` |
+
+**Verification:**
+- Script contains only allowed commands (three `setreg`, three `%normal!`, one `:wq`).
+- Ran headlessly `vim -Nu NONE -n -Es ... -S apply_macros.vim` → **exit 0**, completted in **1m54s**.
+- `cmp /tmp/run.csv expected.csv` → **byte-for-byte match**.
+
+Note: I optimized macro `b` by dropping the `\([0-9]*\)` groups since `\w*` greedily captures the whole field (inc. digits) once the line is uppercased — this cut runtime from ~2m54s to ~1m54s while shrinking keystrokes.
+Agent 阶段完成

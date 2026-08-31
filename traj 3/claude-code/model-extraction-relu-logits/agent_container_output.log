@@ -1,0 +1,35 @@
+
+===== agent attempt container=tb2-5bd643-model-extraction-rel-claude-code-age-3f0dda88 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 900s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=900s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Done. `/app/steal.py` recovers `A1` correctly and saves it.
+
+## Result
+
+`/app/stolen_A1.npy` is shape **(20, 10)** — matching the true `A1`. Validation against the ground-truth network shows every recovered row is a valid recovery: **each has min cosine 0.999998** to a distinct true neuron, and the match is a **unique bijection** (no two recovered rows claim one neuron). That's the "up to permuting neurons and scaling" equivalence the task allows.
+
+## How it works
+
+The one-layer net is `f(x) = A2 @ relu(A1@x + b1) + b2`, so away from a boundary the gradient is
+
+```
+∇f(x) = Σ_{i: a_i·x + b1_i > 0} A2_i · a_i
+```
+
+Crossing neuron `i`'s boundary hyperplane `a_i·x + b1_i = 0` changes the gradient by `±A2_i·a_i` — a vector **collinear with hidden row `a_i`** (its magnitude carries the unknowable `A2_i`, which is exactly why scale is unobservable). So the algorithm in `steal.py`:
+
+1. **Queries** `forward()` with central finite differences to estimate `∇f` at thousands of random nearby point pairs.
+2. **Records jump vectors** `∇f(y) − ∇f(x)`; each is a scalar multiple of some `a_i`. Drops near-zero jumps (finite-difference float noise — cleanly bimodal: noise ~1e-12 vs. real jumps ≥0.02).
+3. **Clusters** the unit-normalized jumps. Each neuron forms one extremely tight cluster (~280–400 points), so greedy seeding with a tight cosine threshold yields one seed per neuron; stray float noise scatters into only tiny clusters.
+4. **Keeps** clusters with substantial support (>5% of the largest), which drops noise and recovering exactly the 20 hidden neurons. The normalized centroids become the rows of `A1`.
+
+The script runs in ~7s and needs only the public `forward(x)` interface — no access to the internals used for validation.
+Agent 阶段完成

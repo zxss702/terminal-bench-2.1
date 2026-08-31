@@ -1,0 +1,41 @@
+
+===== agent attempt container=tb2-5bd643-feal-differential-cr-claude-code-age-9e11c81b =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[1/3] 安装 Claude Code agent...
+[INFO][claude] installing claude from /claude-packages/linux-x64/claude...
+[INFO][claude] agent ready: /usr/local/bin/claude
+2.1.218 (Claude Code)
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 1800s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=1800s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Done. The attack is implemented in `/app/attack.py` and recovers `key[5]` correctly.
+
+## How it works
+
+The attack leverages the differential property of the round function `F` (probability 1):
+- `F(A ^ 0x80800000) = F(A) ^ 0x02000000`
+
+**Chosen plaintexts:** a pair differing by `0x8080000080800000`. Tracing the differential through this 4-round Feistel:
+1. Whitening keys cancel; pre-mix `R ^= L` makes `ΔR0 = 0`.
+2. Round 1: `ΔL1=0, ΔR1=0x80800000` (F sees equal input).
+3. Round 2: via the F property, `ΔR2=0x02000000`.
+4. Round 3: `ΔL3 = ΔR2 = 0x02000000` — **deterministic**, independent of keys; `ΔR3` is arbitrary.
+
+At round 4, the ciphertext halves obey `CL = L3 ^ F(R3 ^ key[5])` and `CR = R3 ^ CL`, so `R3 = CL ^ CR`. This yields the key equation:
+
+`F(R3 ^ key[5]) ^ F(R3' ^ key[5]) == ΔCL ^ 0x02000000`
+
+Since every round key is `(seed * 1234567) & 0xFFFFFFFF` for a **16-bit seed**, only `2^16` values of `key[5]` exist, so I brute-force the seed against this equation and **intersect** the surviving candidates across a few independent plaintext pairs (the true key is guaranteed in every set) until only one remains.
+
+**Validation:** 60/60 random-key trials recovered the exact `key[5]`; worst case ~1.8s, comfortably under the 30s limit.
+
+Sources:
+- [Differential cryptanalysis - Wikipedia](https://en.wikipedia.org/wiki/Differential_cryptanalysis)
+- [FEAL slides](http://www.cs.sjsu.edu/faculty/stamp/crypto/PowerPoint_PDF/13_FEAL.pdf)
+- [FEAL-4 differential cryptanalysis (Biham & Shamir)](https://github.com/Dhanushkumar-S-G/Feal-4)
+Agent 阶段完成

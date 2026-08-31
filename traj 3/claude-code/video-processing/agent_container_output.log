@@ -1,0 +1,37 @@
+
+===== agent attempt container=tb2-5bd643-video-processing-claude-code-age-fd6bfbdd =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 3600s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=3600s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+The script is complete and working. Here's a summary:
+
+## `/app/jump_analyzer.py`
+
+**Results on the example video:** takeoff = frame **54**, landing = frame **62**.
+
+### How it works
+
+1. **Background model** — per-pixel median over all frames. The runner occupies only a few frames, so the median is dominated by the static scene (and the first frame has no runner per the constraints).
+
+2. **Dark-clothing mask** — foreground = `diff > threshold` **AND** `gray < 110`. This is the key disambiguation: the athlete wears dark clothing, while the slow-moving clouds that flicker in the sky are bright. Adding the darkness test suppresses the cloud motion that otherwise dominates a large-blob heuristic (which initially caused false detections at frames 109–119).
+
+3. **Runner isolation** — largest connected component reaching down into the track region, with a minimum area and width, cleaned by morph-close/dilate. The foot is tracked as the bottom-most foreground pixel.
+
+4. **First-presence block** — the video starts empty, then the runner appears in one contiguous block (frames ~48–71) and runs out of frame before late clouds roll in. Analysis is restricted to this block so end-of-video cloud motion can't be mistaken for the athlete.
+
+5. **Flight detection** — the foot's lowest point on the track establishes the ground level; frames where the foot rises more than a small margin above it are airborne. The **longest airborne run** (frames 54–61, apex at 57) is the hurdle flight. **Takeoff = first airborne frame (54)**, **landing = first grounded frame after the run (62)**.
+
+### Verification
+- Visual cross-check of cropped frames confirmed frame 62 shows the shoe grounded on the track left of the hurdle while 61 was still in the air; the takeoff transition sits between frame 53 (grounded, y=361) and 54 (airborne, y=343).
+- Output is simple, valid TOML (`jump_takeoff_frame_number = 54` / `jump_land_frame_number = 62`), verified parseable with `tomllib`. It writes to `/app/output.toml` and accepts the video path as an argument (defaults to `example_video.mp4`).
+- Detections were stable across parameter sweeps of the dark threshold and airborne margin.
+
+Note: `cv2`/`numpy` are only installed under `/usr/local/bin/python3` in this environment (the venv `python` lacks them), so run/grade with `python3` that has opencv available. The `toml` module isn't actually needed since the output is emitted with plain string formatting.
+Agent 阶段完成

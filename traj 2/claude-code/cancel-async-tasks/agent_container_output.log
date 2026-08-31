@@ -1,0 +1,34 @@
+
+===== agent attempt container=tb2-5bd643-cancel-async-tasks-claude-code-age-8b542ad3 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 900s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=900s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+All paths verified. The file is complete at `/app/run.py`.
+
+## What I built
+
+```python
+async def run_tasks(tasks: list[Callable[[], Awaitable[None]]], max_concurrent: int) -> None
+```
+
+It uses an `asyncio.Semaphore(max_concurrent)` to bound concurrency, wraps each task in a worker so it holds a cancellable task object, and gathers them all.
+
+## The cancellation requirement
+
+The tricky part is that a `KeyboardInterrupt` (Ctrl+C) can reach the event loop in more than one way, and your standalone `except KeyboardInterrupt` alone doesn't cover all of them. The function handles both:
+
+- **Interrupt landing directly inside `run_tasks`' gather** — my `try/except KeyboardInterrupt` catches it, cancels every `runner`, then waits for them with `asyncio.gather(*runners, return_exceptions=True)` so cleanup unwinds before re-raising.
+
+- **Cancellation propagating in from outside** (e.g. an outer `asyncio.run`/`wait_for` cancels the chain) — the `CancelledError` unwinds each worker coroutine, and any `async with` / `finally` cleanup runs naturally as part of that unwind, since I await the runners to completion.
+
+I verified with a real `SIGINT` and with a direct in-gather `KeyboardInterrupt`: tasks `a`/`b` that had started were both cleaned (`__aexit__` ran) in every case, and an uninterrupted run completes all 5 tasks.
+
+Note: `asyncio.run` is `_run` at the bottom for convenience, though you'll normally call `asyncio.run(run_tasks(...))` yourself. One thing to be aware of for your usage: cleanup depends on the task's own coroutine structure (`async with` / `try/finally`), which is the standard way — the function reliably drives those to run rather than abandoning tasks.
+Agent 阶段完成

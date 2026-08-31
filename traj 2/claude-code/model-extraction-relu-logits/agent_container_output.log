@@ -1,0 +1,40 @@
+
+===== agent attempt container=tb2-5bd643-model-extraction-rel-claude-code-age-412ecf21 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 900s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=900s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Done. `/app/steal.py` reconstructs `A1` purely from `forward()` queries and saves it to `/app/stolen_A1.npy`.
+
+## Approach
+
+The network output is `f(x) = b₂ + Σᵢ wᵢ·ReLU(aᵢ·x + bᵢ)` (with `w`=A2 flattened, `aᵢ`=row `i` of A1). `f` is **piecewise-linear**, so its **gradient is piecewise-constant**:
+
+```
+∇f(x) = Σ_{i active} wᵢ aᵢ
+```
+
+Crossing neuron `i`'s boundary changes `∇f` by exactly `±wᵢaᵢ`. That jump vector is the **same in every direction** (only sign flips), making it a robust, non-colliding per-neuron signature.
+
+The script:
+1. Probes ~25 random lines `x₀ + t·v` (fresh `x₀` each line, breaking degenerate geometry).
+2. Locates each kink via a cheap scalar slope-change scan, refining position by intersecting the two straight lines on either side.
+3. At each kink, computes the full gradient on both sides by central differences — their difference is `±wᵢaᵢ`.
+4. Clusters these jump vectors by direction (sign-canonicalized), averages each cluster to get `sᵢ = wᵢaᵢ` = row `i` of A1 scaled by `wᵢ`.
+
+Since the output only ever depends on the products `wᵢaᵢ`, this is precisely the allowed equivalence class — **permutation + per-neuron scaling**.
+
+## Validation (against the visible ground-truth `A1`, used only for testing)
+
+- Recovered exactly **20 rows**, **bijectively** matching all 20 ground-truth rows.
+- Every matched direction has cosine **> 0.9999**.
+- Each recovered row's magnitude equals the expected `|wᵢ|·|aᵢ|` (within 0.4% — the rest is harmless averaging noise, and scaling is an allowed ambiguity anyway).
+
+Key insight for the implementation details: using the 10-dim gradient jump (rather than a scalar kink invariant) avoided the sign-flip/magnitude-collision problem I found with scalar clustering, and varying the base point per line eliminated the fused-close-kink issue. Runs in ~1 second.
+Agent 阶段完成

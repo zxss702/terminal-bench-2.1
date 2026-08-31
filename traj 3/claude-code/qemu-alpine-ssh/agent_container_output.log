@@ -1,0 +1,41 @@
+
+===== agent attempt container=tb2-5bd643-qemu-alpine-ssh-claude-code-age-1d164070 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 900s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=900s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+The image is booted and an SSH server is running. 
+
+## What I did
+
+1. **Booted Alpine 3.19.0 in QEMU** (software/TCG, no KVM available). Since the environment couldn't mount/expose the ISO NBD, I extracted `vmlinuz_lts` + `initramfs_lts` from the ISO with `pycdlib`, booted them via `-kernel`/`-initrd` with `console=ttyS0` so the guest's console lands on a serial socket I could drive, and attached `/app/alpine.iso` as a CD-ROM so the live media's package repo is available.
+
+2. **Gave the guest networking** — brought `eth0` up at `10.0.2.15/24` with gateway `10.0.2.2` (QEMU slirp), plus DNS.
+
+3. **Installed and configured **openssh-server** (fetched from the ISO's own `/media/cdrom/apks` repo — no external net needed):
+   - set root password to `password123` (`chpasswd`)
+   - generated host keys (`ssh-keygen -A`) and enabled `PermitRootLogin yes` + `PasswordAuthentication yes`
+   - started `sshd`
+
+4. **Forwarded the port** — ran qemu with `-netdev user,hostfwd=tcp::2222-:22`, so host port 2222 → guest port 22.
+
+Verified end-to-end: `ssh -p 2222 -o StrictHostKeyChecking=no root@localhost` responds with the SSH banner, and authenticating with `password123` drops into a root shell (`uid=0`, here-doc ran `LOGIN_OK; id`).
+
+## You can now run
+```
+ssh -p 2222 root@localhost
+```
+password: `password123`
+
+## Caveats
+- No `/dev/kvm` here, so the VM runs under TCG emulation (slower but fine for SSH).
+- The Alpine system is the **live media in RAM** — the SSH config lives in the VM's memory, not on disk. It persists as long as the VM daemon keeps running (it does, in the background). If the VM is ever rebooted, the config would be lost. The included `/app/alpine-disk.qcow2` is still empty at 196 KiB; if you want a durable install that survives reboots, I can `setup-alpine` onto that disk and migrate the SSH config there.
+
+One note: I temporarily installed the `pycdlib` Python package (into the active venv) to read the ISO — let me know if you'd like that removed.
+Agent 阶段完成

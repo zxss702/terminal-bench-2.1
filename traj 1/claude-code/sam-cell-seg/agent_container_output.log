@@ -1,0 +1,45 @@
+
+===== agent attempt container=tb2-5bd643-sam-cell-seg-claude-code-age-72b639d3 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[1/3] 安装 Claude Code agent...
+[INFO][claude] installing claude from /claude-packages/linux-x64/claude...
+[INFO][claude] agent ready: /usr/local/bin/claude
+2.1.218 (Claude Code)
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 7200s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=7200s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+The script is complete and validated. Here's a summary.
+
+## What I built
+
+`/app/convert_masks.py` — takes the four required argparse args and, on CPU, uses **MobileSAM** (`vit_t`, the distilled SAM) to convert every mask in the CSV to a closed polyline.
+
+**Pipeline:**
+1. Loads weights directly via `torch.load(weights_path, map_location="cpu")` into a `sam_model_registry["vit_t"]()` model — so it never assumes a GPU and never touches MobileSAM's source.
+2. Runs the image encoder once (`set_image`), then each cell gets a **box prompt** built from its own `coords_x/coords_y` (falls back to `xmin/ymin/xmax/ymax`), clamped to the image.
+3. Per cell: predict → keep the **largest connected component** (→ single contiguous region, no disconnected fragments) → subtract pixels already claimed by a larger neighbor (→ **no overlap**). Larger cells claim first via a cheap bounding-box-area ordering, keeping memory to a single `O(H·W)` claim table instead of N full-res masks.
+4. Rasterizes each refined mask into a polygon with `findContours` + `approxPolyDP`, closes the contour, and writes `xmin/xmax/ymin/ymax` + comma-separated `coords_x/coords_y`, setting `type=polyline`. All other original columns are preserved.
+
+**Validation with real `mobile_sam.pt`** (40.7 MB, fetched from the official repo's `weights/` path) on the demo data — 48 rows in ~35s on CPU:
+
+| Metric | Result |
+|---|---|
+| Polyline masks | 48/48 |
+| Overlapping masks | 0 |
+| Multi-component (non-contiguous) | 0 |
+| Degenerate/empty | 0 |
+| Near-rectangular output | 0 |
+
+The original rectangles (e.g. row 0, a box) now yield organic, irregular polygons that follow the actual cell shape.
+
+Note: MobileSAM depends on `timm`, which comes in as its dependency in the evaluation environment. I only added it locally (along with `torch`/`torchvision`/`opencv`) to develop and test — the script itself imports only the allowed packages plus stdlib.
+
+Sources:
+- [MobileSAM (ChaoningZhang/MobileSAM)](https://github.com/ChaoningZhang/MobileSAM)
+- Weights via the repo's raw checkpoint path ([kornia/mobile_sam mirror](https://huggingface.co/kornia/mobile_sam/blob/main/mobile_sam.pt))
+Agent 阶段完成

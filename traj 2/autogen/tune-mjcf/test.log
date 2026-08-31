@@ -1,0 +1,85 @@
+
+===== verify shared attempt 1 exit=0 =====
+Hit:1 http://deb.debian.org/debian bookworm InRelease
+Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+Hit:3 http://deb.debian.org/debian-security bookworm-security InRelease
+Fetched 55.4 kB in 1s (50.1 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+curl is already the newest version (7.88.1-10+deb12u15).
+0 upgraded, 0 newly installed, 0 to remove and 29 not upgraded.
+no checksums to verify
+installing to /root/.local/bin
+  uv
+  uvx
+everything's installed!
+
+To add $HOME/.local/bin to your PATH, either restart your shell or run:
+
+    source $HOME/.local/bin/env (sh, bash, zsh)
+    source $HOME/.local/bin/env.fish (fish)
+============================= test session starts ==============================
+platform linux -- Python 3.13.7, pytest-8.4.1, pluggy-1.6.0
+rootdir: /tests
+plugins: json-ctrf-0.3.5
+collected 4 items
+
+../tests/test_outputs.py ..F.                                            [100%]
+
+=================================== FAILURES ===================================
+_______________________________ test_correctness _______________________________
+
+    def test_correctness():
+        """Compare final states of models with potentially different timesteps"""
+        model_path = app_dir / "model.xml"
+        model_ref_path = app_dir / "model_ref.xml"
+    
+        model = mujoco.MjModel.from_xml_path(str(model_path))
+        model_ref = mujoco.MjModel.from_xml_path(str(model_ref_path))
+    
+        seed = np.random.randint(0, 10000)
+        final_state = simulate_model(model, seed)
+        final_state_ref = simulate_model(model_ref, seed)
+    
+        # compare final states
+        state_diff = np.linalg.norm(final_state - final_state_ref)
+        print(f"Final state difference: {state_diff:.4f}")
+    
+>       assert np.allclose(final_state, final_state_ref, atol=atol), (
+            f"Final states differ by {state_diff}, exceeding tolerance {atol}"
+        )
+E       AssertionError: Final states differ by 0.0028362391466831924, exceeding tolerance 1e-05
+E       assert False
+E        +  where False = <function allclose at 0x7a3581e62eb0>(array([ 1.99800000e+00,  9.74817671e-01, -8.61839929e-04,  2.22998487e-01,\n       -1.19976090e-03,  9.87673974e-01, -5...6242e-05,  5.03217306e-03, -4.57547228e-03,\n       -5.87855446e-06,  2.65497445e-03, -2.79123398e-03, -5.05560249e-02]), array([ 2.00000000e+00,  9.74806324e-01, -8.65387152e-04,  2.23047958e-01,\n       -1.22060685e-03,  9.87666384e-01, -5...7409e-05,  5.08494151e-03, -4.56624189e-03,\n       -5.86491451e-06,  2.68673219e-03, -2.78607281e-03, -5.17537344e-02]), atol=1e-05)
+E        +    where <function allclose at 0x7a3581e62eb0> = np.allclose
+
+/tests/test_outputs.py:67: AssertionError
+----------------------------- Captured stdout call -----------------------------
+Final state difference: 0.0028
+==================================== PASSES ====================================
+_______________________________ test_model_speed _______________________________
+----------------------------- Captured stdout call -----------------------------
+Avg simulation time: 0.1536 secs
+Avg simulation time (ref): 0.4061 secs
+Speedup: 2.71x
+Time pctg: 0.38
+=========================== short test summary info ============================
+PASSED ../tests/test_outputs.py::test_model_ref_unchanged
+PASSED ../tests/test_outputs.py::test_tuned_model_exists
+PASSED ../tests/test_outputs.py::test_model_speed
+FAILED ../tests/test_outputs.py::test_correctness - AssertionError: Final sta...
+========================= 1 failed, 3 passed in 12.48s =========================
+
+downloading uv 0.9.5 x86_64-unknown-linux-gnu
+Downloading pygments (1.2MiB)
+Downloading numpy (15.9MiB)
+Downloading mujoco (6.4MiB)
+Downloading pyopengl (3.0MiB)
+ Downloading pygments
+ Downloading pyopengl
+ Downloading mujoco
+ Downloading numpy
+Installed 15 packages in 329ms
+

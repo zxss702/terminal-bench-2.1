@@ -1,0 +1,38 @@
+
+===== agent attempt container=tb2-5bd643-custom-memory-heap-c-claude-code-age-1a413d5e =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[1/3] 安装 Claude Code agent...
+[INFO][claude] installing claude from /claude-packages/linux-x64/claude...
+[INFO][claude] agent ready: /usr/local/bin/claude
+2.1.218 (Claude Code)
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 1800s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=1800s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Fixed. The program now runs correctly under both builds with zero Valgrind errors and no leaks.
+
+## Root cause
+
+This in-house libstdc++ (patched in `/build/patches/`) borrows MSVC's behavior: on the first runtime use of a locale facet, it lazily allocates 5 `_Fac_node` bookkeeping nodes and registers them for cleanup after `main()` exits. In the **RELEASE** build (`-DNDEBUG`) those nodes are allocated via the program's overridden global `operator new`, which routes into `CustomHeapManager`'s single 10 MB bump buffer (main.cpp).
+
+The problem sequence:
+1. `init()`'s first `cout` triggers facet registration → 5 nodes into the **custom heap**.
+2. `Application`'s destructor → `shutdown()` frees that entire 10 MB block.
+3. After `main()` returns, libstdc++'s exit-time `_Fac_tidy_reg_t` destructor frees those same interior pointers again → **double-free → SIGSEGV**.
+
+The **DEBUG** build avoids it because the same code uses `malloc`/`free` directly on the system heap, never touching the custom heap.
+
+## The fix (`/app/user.cpp`)
+
+The key is the ordering in `init()`: `user_init()` runs **before** `g_custom_heap` is assigned. By forcing facet registration inside `user_init()` — calling `std::_Facet_Register_impl()` — the registration happens while `g_custom_heap` is still null, so `operator new` falls through to system `malloc`. The later runtime `__try_use_facet` calls then see registration already complete and do nothing. The facet nodes end up on the system heap, so libstdc++'s exit-time cleanup frees them correctly — no crash, no leak.
+
+## Verification
+- **Release**: exits 0 (`RELEASE_EXIT=0`), previously SIGSEGV (139).
+- **Debug**: exits 0.
+- **Valgrind (both)**: 0 errors, `definitely lost: 0`, `indirectly lost: 0`. The one `still reachable` 73,728-byte block is libstdc++'s permanent exception-allocation pool (`eh_alloc.cc`), a program-lifetime pool unrelated to the fix and not a leak.
+- Only `/app/user.cpp` was modified; `main.cpp` and `user.h` are untouched.
+Agent 阶段完成

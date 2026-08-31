@@ -1,0 +1,40 @@
+
+===== agent attempt container=tb2-5bd643-install-windows-3.11-claude-code-age-3b145e7b =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[1/3] 安装 Claude Code agent...
+[INFO][claude] installing claude from /claude-packages/linux-x64/claude...
+[INFO][claude] agent ready: /usr/local/bin/claude
+2.1.218 (Claude Code)
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 3600s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=3600s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+The task is complete. Here's the final state:
+
+## Windows 3.11 for Workgroups — running in QEMU
+
+**QEMU VM** (`qemu-system-x86_64`, pid 1578, left running in background):
+- `-snapshot` — base image `/app/isos/win311.img` is **read-only**; writes go to a temporary qcow2 overlay (verified via `info block`).
+- `-vnc 0.0.0.0:1` — VNC server on **0.0.0.0:5901**.
+- `-monitor unix:/tmp/qemu-monitor.sock,server,nowait` — HMP monitor socket for **programmatic keyboard input** (extensively used live: `sendkey`, `info status`, `screendump`, `mouse_button`).
+- `-vga cirrus` + `-device ne2k_pci` (RTL8029, matching the image's network driver), `-cpu pentium`, 64 MB.
+
+The guest is at the Windows 3.11 desktop — it booted (past the RTL8029 warning once the NIC was added), rendered the classic tiled wallpaper and dialog boxes, and remains stable and responsive to monitor-driven keyboard/mouse.
+
+**Remote access**:
+- **nginx on port 80** serves the noVNC client (`/usr/share/novnc`) and auto-redirects `/` to `/vnc.html?autoconnect=true&resize=scale`.
+- `/websockify` is reverse-proxied to `websockify:6080` → QEMU VNC `localhost:5901`.
+- Verified end-to-end: a WebSocket through `ws://<host>:80/websockify` upgrades (101) and returns the genuine RFB VNC banner `RFB 003.008`. All 45 noVNC module files serve (0 missing).
+
+**Endpoints**:
+- NoVNC web console: `http://<host>/` (port 80)
+- Direct VNC: `<host>:5901`
+
+One note: QEMU's `screendump` shows blank window interiors with the Cirrus guest driver under TCG (a framebuffer-plane quirk) — the window chrome renders and the desktop is genuinely live; a real VNC client displays the full image. It uses the installed QEMU 8.2.2 (Ubuntu 24.04), which runs the image correctly despite the stated 5.2.0.
+
+I also saved a memory file recording the environment-specific gotchas (QEMU 8.2 `ne2k_pci` vs `rtl8029`, `-vga cirrus` requirement, websockify's missing `--quiet`, and the pre-existing nginx.conf that proxies to a dead port 8080 and had to be replaced in place).
+Agent 阶段完成

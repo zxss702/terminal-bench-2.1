@@ -1,0 +1,33 @@
+
+===== agent attempt container=tb2-5bd643-torch-tensor-paralle-claude-code-age-5061d281 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[1/3] 安装 Claude Code agent...
+[INFO][claude] installing claude from /claude-packages/linux-x64/claude...
+[INFO][claude] agent ready: /usr/local/bin/claude
+2.1.218 (Claude Code)
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 900s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=900s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+The implementation is correct — the numpy simulation confirms both sharding schemes reconstruct the full linear exactly, and the row-parallel bias is properly added post-reduce (so it isn't summed `world_size` times).
+
+## Summary
+
+Created `/app/parallel_linear.py` with both classes:
+
+**`ColumnParallelLinear`** — splits `master_weight` along the output dimension (dim 0), giving each rank `(out_features/world_size, in_features)`. Bias is zero-initialized and sharded as `(out_features/world_size,)`. Forward computes the local slice, then `all_gather`s and concatenates along the last dimension (equivalent to a final `all_gather`).
+
+**`RowParallelLinear`** — splits `master_weight` along the input dimension (dim 1), giving each rank `(out_features, in_features/world_size)`. Forward receives the already-scattered input slice, computes a partial output, `all_reduce`s (SUM) across ranks, then adds the full per-rank bias. The bias is added **after** the reduce so it isn't multiplied by `world_size`.
+
+Key implementation details:
+- Both read `get_world_size()`/`get_rank()` and assert evenly divisible partitions (the tests use world sizes 1, 2, 4).
+- `master_weight` is detached when it's a `Parameter` (the receiver owns a fresh `Parameter` for autograd).
+- Guarded the collectives for `world_size == 1` so single-rank runs work.
+- Using `nn.Parameter` for weights/bias ensures gradients flow correctly for the gradient tests.
+
+Note: torch isn't installed in this environment, so I validated the math via simulation rather than a live distributed run. One thing worth flagging: the tests will spawn their own process group, so the module construction reads world/rank from an already-initialized **distributed** group when you instantiate them.
+Agent 阶段完成

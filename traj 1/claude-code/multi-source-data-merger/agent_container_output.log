@@ -1,0 +1,39 @@
+
+===== agent attempt container=tb2-5bd643-multi-source-data-me-claude-code-age-970eca4c =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[1/3] 安装 Claude Code agent...
+[INFO][claude] installing claude from /claude-packages/linux-x64/claude...
+[INFO][claude] agent ready: /usr/local/bin/claude
+2.1.218 (Claude Code)
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 900s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=900s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+The merge is complete and verified. Both output files are generated correctly.
+
+## Result
+
+**`/app/merged_users.parquet`** — 4 unique users, correct types (user_id as int64):
+
+| user_id | name | email | created_date | status |
+|---------|------|-------|--------------|--------|
+| 101 | John Doe | john@a.com | 2024-01-15 | active |
+| 102 | Jane Smith | jane@a.com | 2024-02-20 | inactive |
+| 103 | Bob Wilson | bob@b.com | 2024-03-01 | active |
+| 104 | Alice Brown | alice@c.com | 2024-04-01 | active |
+
+**`/app/conflicts.json`** — `total_conflicts: 3`, matching the 3 conflict entries, all for user 101 (present in all three sources with mismatched values). Each conflict resolves to the `source_a` value per the priority rule.
+
+### What the solution does
+- **Field mapping** applied per source (`id`→`user_id`, `userName`→`name`, `joined`→`created_date`, etc.)
+- **Date normalization** to `YYYY-MM-DD` across all three formats
+- **Status normalization**: boolean `is_active`/`active` columns mapped to `active`/`inactive` strings to match source_a's terminology (e.g. 103's `true` → `active`, 102 inherited `inactive`)
+- **Merge** keyed on `user_id`, resolved by priority `source_a > source_b > source_c`
+- **Conflict detection** compares across the highest-priority source's value set; only records differing between sources are reported
+
+One design note worth flagging: source_b's `is_active` and source_c's `active` are booleans with no textual status. I mapped `true`→`active` / `false`→`inactive` for consistency with source_a's strings. Since several records only appear in bool sources, if you'd prefer raw `true`/`false` in the `status` column instead, that's a one-line change.
+Agent 阶段完成

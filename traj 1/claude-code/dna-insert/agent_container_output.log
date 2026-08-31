@@ -1,0 +1,38 @@
+
+===== agent attempt container=tb2-5bd643-dna-insert-claude-code-age-929e37f8 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[1/3] 安装 Claude Code agent...
+[INFO][claude] installing claude from /claude-packages/linux-x64/claude...
+[INFO][claude] agent ready: /usr/local/bin/claude
+2.1.218 (Claude Code)
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 1800s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=1800s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Done. I designed 1 primer pair and wrote `primers.fasta`.
+
+## Result
+
+The input and output differ by a **single contiguous 39-bp insertion** at position 213 of the input (`actctt...tacatatga | agcat...` → output `...tacatatga` + `agtagattagaagaagaattaagaagaagattaacagaa` + `agcat...`). Since it's one insertion site, the **minimum number of primer pairs is 1**.
+
+**Design (canonical Q5 back-to-back insertion scheme):**
+- **Forward** primer (`56 nt`): 5'-overhang = the 39-bp insert (`agtagattagaagaa...aacagaa`), followed by a 17-nt 3' region that anneals downstream of the insertion site. The overhang bridges the gap between the two annealing regions.
+- **Reverse** primer (`33 nt`): anneals immediately upstream of the insertion site.
+
+**Verified against oligotm (`-tp 1 -sc 1 -mv 50 -dv 2 -n 0.8 -d 500`), Tm computed on annealing regions only:**
+
+| Primer | Annealing length | Tm (°C) |
+|--------|-----------------|---------|
+| Forward | 17 nt (15–45 ✓) | 65.14 (58–72 ✓) |
+| Reverse | 33 nt (15–45 ✓) | 60.55 (58–72 ✓) |
+
+ΔTm = **4.59 °C ≤ 5 °C ✓**
+
+I confirmed the design reconstructs the output exactly (`inp[:213] + INS + inp[213:] == output`) and that the two annealing regions are positioned back-to-back with the 39-bp gap precisely filled by the forward primer's 5' overhang.
+
+Note: the downstream (forward-annealing) region is GC-rich so the forward anneal had to be short (m=15–17 to stay ≤72 °C), while the upstream (reverse) region is AT-rich so the reverse anneal needed to be long (k≥30 to reach ≥58 °C) — oligotm's 36-base limit is satisfied by both.
+Agent 阶段完成

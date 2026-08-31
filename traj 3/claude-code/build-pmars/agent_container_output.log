@@ -1,0 +1,32 @@
+
+===== agent attempt container=tb2-5bd643-build-pmars-claude-code-age-c1181b91 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 900s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=900s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+All verifications pass. Note: the `grep SERVER` matched only the option-description comment block in the Makefile (`# (1) -DSERVER … disables cdb debugger`), not an actual flag — the `CFLAGS` line is `-O -DEXT94 -DPERMUTATE -DRWLIMIT`, and the debugger works (confirmed live via `-e`), so it's not the SERVER build.
+
+## Done
+
+Built pMARS from the Debian source package and installed it.
+
+**Source (Debian, not koth.org):** downloaded `pmars_0.9.4-1` from `deb.debian.org` via `apt-get source` and extracted to **`/app/pmars-0.9.4/`** (left in place). Applied all four upstream Debian patches to the `src/` tree (buildflags, printf, manpage, fix-implicit-sighandler).
+
+**Build (no X11):** edited `/app/pmars-0.9.4/src/Makefile` to drop `-DXWINGRAPHX` from `CFLAGS` and empty the `LIB` (removed `-lX11`). This yields a no-display console build — exactly what's needed headless. I deliberately did **not** use the curses option, because pMARS calls `initscr()` unconditionally each round in `sim.c`, which would break the piped batch test.
+
+**Installed:** `/usr/local/bin/pmars`.
+
+**Verification:**
+- `pmars -b -r 50 -f flashpaper.red rave.red | tail -n 1` → **`Results: 12 30 8`**, exit 0 ✔
+- **No X11 dependencies:** `ldd` shows only `libc` / `ld-linux`; zero X11/XWin symbols ✔
+- **Uses Debian sources** ✔ (Debian package + Debian patches)
+- **Debugger works:** `pmars -e` enters `cdb`; `s` steps (advances PC, prints instruction), `r` shows registers, `g` (GO) continues to a correct `Results: 12 30 8`, `q` quits (exit 4 = pMARS "user aborted", which is the documented quit behavior) ✔
+
+One note: in a genuine no-display console build, the `d` (disassemble output) cdb command is compiled out — that command is gated behind the graphics display subsystem. Stepping/inspection/continue/quit all work. If you'd prefer the disassemble command available in the debugger, I could add an ncurses-based text display instead, but as noted that makes `initscr()` run even in batch mode; let me know if you want that trade-off.
+Agent 阶段完成

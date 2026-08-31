@@ -1,0 +1,38 @@
+
+===== agent attempt container=tb2-5bd643-configure-git-webser-claude-code-age-2a8f14b0 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 900s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=900s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Done. I verified the full flow on this machine: pushing `hello.html` to `/git/server` triggers the post-receive hook, which checks it out into `/var/www/server`, and `curl http://localhost:8080/hello.html` returns `hello world`. Your exact workflow works as-is.
+
+## What I set up
+
+**1. Bare git repo** at the exact clone path — `/git/server` (this is the repo, not a directory of files). Your `user@server:/git/server` clone target maps to it directly.
+
+**2. Post-receive hook** at `/git/server/hooks/post-receive`. It runs on every push and checks out the pushed branch into `/var/www/server` — so the served site is always the latest commit.
+
+**3. Web server on port 8080** serving `/var/www/server`:
+- Run via a script I added at `/usr/local/sbin/serve-git-www` (it's running now, log at `/var/log/serve-git-www.log`).
+- Overridable with `DIR` and `PORT` env vars.
+- Uses Python's `http.server` (no nginx needed).
+
+## How it's plumbed
+```
+git push  →  bare repo /git/server  →  post-receive hook  →  /var/www/server  →  http.server :8080
+```
+
+## Two things to note for the real server
+
+- **Push write access** — whoever pushes needs write permission on `/git/server`. I set it to `a+rX` (world-readable), but if your `user` account is a distinct Linux user, make sure it can `git push` over SSH. You said login is your concern, but this is the one permission tied to the repo itself. E.g. either `chown -R user:user /git/server` or add `user` to a group with write access on that tree.
+
+- **Persistence** — the web server currently runs in the background from this session. On a real reboot you'll want it as a service. Your launch script already exists; for a persistent service you could create a systemd unit, or just re-run `serve-git-www` at boot.
+
+Nothing about your commands needs to change — `git clone user@server:/git/server` plus the push/commit sequence, then `curl http://server:8080/hello.html` gives `hello world`.
+Agent 阶段完成

@@ -1,0 +1,53 @@
+
+===== agent attempt container=tb2-5bd643-dna-assembly-claude-code-age-ec796237 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 1800s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=1800s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Done. I designed the primers and wrote them to `/app/primers.fasta` (verified end-to-end: the PCR products, when digested with BsaI-HF v2 and assembled, reconstruct the output plasmid exactly — 3591 bp, perfect match).
+
+## Design summary
+
+**Assembly structure.** The output is the input backbone with the region `input[210:690]` (480 bp) replaced by a canonical cassette `egfp→flag→snap`. The backbone is amplified as one linear piece (`input[690:2727]+input[0:210]`), so there are **4 fragments** in the one-pot circular assembly — hence **4 primer pairs (8 primers), the minimum** required.
+
+**Junction 4-bp overhangs** (determined by aligning the source sequences into the output):
+
+| Fragment | fwd overhang | rev overhang |
+|---|---|---|
+| input | TGAG | TCAT |
+| egfp | ATGA | TACC |
+| flag | GGTA | TGTC |
+| snap | GACA | CTCA |
+
+Each `rev` is the reverse-complement of the next fragment's `fwd`, and the overhangs are unique and non-palindromic, so the assembly resolves to one circular product.
+
+**Primer architecture (5′→3′).** Each primer is `clamp – GGTCTC – 1-nt spacer – 4-nt overhang – annealing region`:
+- NEB **clamp** (`GC`) before the recognition site,
+- **GGTCTC** site (reverse primer keeps it there so BsaI cuts against the bottom strand),
+- a **1-nt spacer** between the site and overhang — required, since BsaI's 1/5 cut otherwise yields only a 3-nt overhang,
+- the 4-nt overhang,
+- the gene-specific annealing tail (15–45 nt, Tm 58–72 °C).
+
+**Constraint checks (all pass, using compiled `oligotm -tp 1 -sc 1 -mv 50 -dv 2 -n 0.8 -d 500`):**
+- Annealing lengths 16–36 nt, each present in its own template.
+- Tm in 58–72 °C for every primer (62.31–63.93 °C).
+- Each fwd/rev pair Tm delta ≤5 °C (table below).
+- Tails contain no internal BsaI sites; the assembled product has no regenerated cuts.
+
+| Fragment | fwd Tm | rev Tm | ΔTm |
+|---|---|---|---|
+| input | 62.91 | 60.70 | 2.22 |
+| egfp | 63.48 | 62.31 | 1.18 |
+| flag | 63.93 | 62.56 | 1.37 |
+| snap | 63.53 | 62.71 | 0.82 |
+
+Sources used for the NEB BsaI-HF v2 requirements:
+- [Insert Considerations When Using NEBridge Golden Gate Assembly Kit (BsaI-HFv2, NEB #E1601)](https://www.neb.cn/zh-cn/tools-and-resources/usage-guidelines/insert-considerations-when-using-neb-golden-gate-assembly-kit-bsai-hfv2-neb-e1601)
+- [NEB Golden Gate Assembly Mix (E1600)](https://prd-sccd01.neb.com/en/products/e1600-neb-golden-gate-assembly-mix#1)
+Agent 阶段完成

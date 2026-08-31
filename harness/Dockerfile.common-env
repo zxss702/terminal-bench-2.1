@@ -1,0 +1,38 @@
+# TB2 shared ENV layer: bake env_install_common.sh into the task base image once.
+# All agents then start from this image and only install their own agent binary/pkg.
+#
+# Swift / browser WebKit intentionally NOT installed (keeps builds small/fast).
+# Package downloads: HTTP_PROXY build-arg is Clash (git/curl/pip). apt/dnf use
+# TB2_PKG_PROXY (Squid) via apt.conf / dnf.conf. pip uses BuildKit cache
+# id=tb2-pip (seeded once from host .cache/pip). FROM pull is host Clash.
+
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+ARG TB2_PKG_PROXY=
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG http_proxy
+ARG https_proxy
+
+USER root
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TB2_VENV_DIR=/opt/tb2-venv
+ENV AGENTS_CACHE_DIR=/agent-packages
+ENV PIP_CACHE_DIR=/root/.cache/pip
+
+COPY env_install_common.sh /tmp/env_install_common.sh
+
+RUN --mount=type=cache,id=tb2-pip,sharing=locked,target=/root/.cache/pip \
+    set -eux; \
+    AGENTS_CACHE_DIR=/agent-packages sh /tmp/env_install_common.sh; \
+    touch /opt/tb2-common-env.ok; \
+    rm -f /tmp/env_install_common.sh
+
+ENV TB2_COMMON_ENV_PREBUILT=1
+# /usr/bin then runtime activate prepends venv (see harness/agents/common.py).
+ENV PATH=/usr/bin:${PATH}
+ENV VIRTUAL_ENV=/opt/tb2-venv
+ENV TB2_VENV_DIR=/opt/tb2-venv
+ENV PIP_CACHE_DIR=/root/.cache/pip

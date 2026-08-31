@@ -1,0 +1,43 @@
+
+===== agent attempt container=tb2-5bd643-financial-document-p-claude-code-age-ed5a3713 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 1200s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=1200s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Done. All 17 documents processed successfully.
+
+## Summary
+
+**Classification (17 files):**
+- **11 invoices** → `/app/invoices/`
+- **6 other** (2 stock/purchase-order/shipping PDFs, 1 resume, 1 handwritten note, 2 memos) → `/app/other/`
+
+**`/app/invoices/summary.csv`** was created with the columns `filename, total_amount, vat_amount`:
+
+| filename | total_amount | vat_amount |
+|---|---|---|
+| 2lgKzDuI4E4g.jpg | 6558.0 | 0 |
+| JOiylq2_7S18.jpg | 6236.77 | 623.68 |
+| KrJiw0OZx7jf.jpg | 9963.0 | 0 |
+| T0r6Ou8zvqTA.pdf | 4031.0 | 0 |
+| UsN9tVTKskms.pdf | 896.0 | 0 |
+| ivE2mt3HwvEO.jpg | 744.6 | 74.46 |
+| lxtL9XrYRsVG.jpg | 725.37 | 72.54 |
+| vvK89XK847m3.jpg | 5640.17 | 564.02 |
+| w0i40MJP2Dzm.jpg | 40677.81 | 4067.78 |
+| wIQEB5nR79b2.pdf | 440.0 | 0 |
+| **total** | **75912.72** | **5402.48** |
+
+**Key handling decisions:**
+- For the two SumUp-style invoices (2lgKzDuI4E4g, KrJiw0OZx7jf), both `Total` and `Amount due` are present with different values → applied the special case, using only the `Total` amount (6558 / 9963), ignoring the differing Amount due.
+- VAT-only sources (JOiylq2, ivE2mt3HwvEO, lxtL9XrYRsVG, vvK89XK847m3, w0i40MJP2Dzm) had their `Total` and VAT amounts extracted.
+- PDFs and items with no VAT have `vat_amount` = 0.
+
+**Verification:** `/app/documents/` is empty (0 files), 11 files + summary.csv in invoices, 7 files in other.
+Agent 阶段完成

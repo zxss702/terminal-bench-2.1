@@ -1,0 +1,46 @@
+
+===== agent attempt container=tb2-5bd643-fix-ocaml-gc-claude-code-age-aff544d4 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[1/3] 安装 Claude Code agent...
+[INFO][claude] installing claude from /claude-packages/linux-x64/claude...
+[INFO][claude] agent ready: /usr/local/bin/claude
+2.1.218 (Claude Code)
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 3600s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=3600s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Fixed. The OCaml bootstrap compiler now builds and the basic testsuite runs cleanly.
+
+## Root cause
+
+The bug was in `runtime/shared_heap.c`, in `pool_sweep()` — the function that sweeps a major-heap pool and records free space.
+
+OCaml's major heap uses a **sizeclass** allocator where each pool is divided into fixed-size **slots**. Every slot is exactly `wh = wsize_sizeclass[sz]` words, but a live object may be smaller than its slot, leaving a **fragment gap** of `wh - Whsize_hd(hd)` words. Because of this, traversing a pool must step by the **slot size** `wh`, not by each object's actual size.
+
+The sweep loop ended its per-iteration advance with:
+
+```c
+p += Whsize_hd(hd);   /* advance by the object's actual size */
+```
+
+Every other pool-traversal function in the file (`calc_pool_stats`, `large_alloc_sweep`, the large-alloc sweep, compaction, etc.) correctly advances by `p += wh`. Sweeping with the object's real size mis-steps whenever an object under-fills its slot (very common), so the GC landed mid-slot, read a garbage/partial header, and crashed — which is exactly the bootstrap crash.
+
+The fix (`shared_heap.c:650`):
+
+```c
+p += wh;
+```
+
+For the newly added free-space run-length path this is also the correct advance: a free block is a run of `r+1` slots, and the code already skips `r` slots via `p += wh * Wosize_hd(hd)`, so the trailing `p += wh` completes the `(r+1)*wh` advance.
+
+## Verification
+- `make -j4 world` — bootstrap compiler builds without crashing
+- `make -j4 world.opt` — native compiler builds
+- `make -C testsuite one DIR=tests/basic` — **40 passed, 0 failed**
+
+Since this isn't a git repo I couldn't diff against a commit, but the single anomalous stride site was the only place in the file using the object-size advance instead of the slot-size advance.
+Agent 阶段完成

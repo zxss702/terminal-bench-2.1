@@ -1,0 +1,31 @@
+
+===== agent attempt container=tb2-5bd643-password-recovery-claude-code-age-12d44ae7 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[1/3] 安装 Claude Code agent...
+[INFO][claude] installing claude from /claude-packages/linux-x64/claude...
+[INFO][claude] agent ready: /usr/local/bin/claude
+2.1.218 (Claude Code)
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 900s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=900s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Recovery complete. ✅
+
+**Recovered password:** `8XDP5Q2RT9ZK7VB3BV4WW54`
+
+## How I recovered it
+
+1. **Located the target** — `/app/varsea/disks/sub1/subA/subAlpha/ae3f4c.dat` (the only real "disk" in an otherwise decoy tree of random-noise `.bin`/`.log` files).
+
+2. **Found embedded data** — the 4MB image began as random (encrypted-looking) bytes, but scanning found a ZIP signature (`PK\x03\x04`) at offset 1048576 spanning to offset ~3145851, containing a single entry: `app/launchcode.txt` (declared length 33 = `PASSWORD=` + 23 chars + newline).
+
+3. **Recovered the fragments** — the deleted file's stored data was partially overwritten, leaving a readable residual `PASSWORD=8XDP5Q2RT9Z` (11 chars) in the ZIP data area. A second clean fragment `K7VB3BV4WW54` (12 chars, ending in `W54`) was recovered from unallocated space right before the ZIP's central directory at offset 3145724.
+
+4. **Combined + verified** — joining the two fragments gives a 23-char value starting with `8XD` and ending with `W54`, using only uppercase letters and digits. Computing its CRC (of `PASSWORD=...\n`) returned `0xb0725dc4`, matching the expected CRC exactly — confirming the recovery.
+
+The password has been written to `/app/recovered_passwords.txt`.
+Agent 阶段完成

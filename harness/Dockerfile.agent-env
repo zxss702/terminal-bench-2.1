@@ -1,0 +1,51 @@
+# TB2 agent layer on top of common-env.
+# pip uses the same BuildKit cache id=tb2-pip as Dockerfile.common-env.
+# Extra payload (AgentFlow source / Claude packages / Logorythia zip) is
+# copied into the build context under extra/ when needed.
+
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+ARG BASE_IMAGE
+ARG TB2_PKG_PROXY=
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG AGENT_ID=
+
+USER root
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV AGENTS_CACHE_DIR=/agent-packages
+ENV CLAUDE_PACKAGES_DIR=/claude-packages
+ENV PIP_CACHE_DIR=/root/.cache/pip
+
+COPY env_install_agent.sh /tmp/env_install_agent.sh
+COPY extra/ /tmp/agent-extra/
+
+RUN --mount=type=cache,id=tb2-pip,sharing=locked,target=/root/.cache/pip \
+    set -eux; \
+    mkdir -p /agent-packages /claude-packages; \
+    if [ -d /tmp/agent-extra/agentflow ]; then \
+      rm -rf /agent-packages/agentflow; \
+      cp -a /tmp/agent-extra/agentflow /agent-packages/agentflow; \
+    fi; \
+    if [ -d /tmp/agent-extra/claude-packages ]; then \
+      cp -a /tmp/agent-extra/claude-packages/. /claude-packages/; \
+    fi; \
+    if [ -f /tmp/agent-extra/logorythia.zip ]; then \
+      cp -a /tmp/agent-extra/logorythia.zip /logorythia_linux_x86.zip; \
+    fi; \
+    AGENTS_CACHE_DIR=/agent-packages \
+    CLAUDE_PACKAGES_DIR=/claude-packages \
+    PACKAGE_PATH=/logorythia_linux_x86.zip \
+    sh /tmp/env_install_agent.sh; \
+    printf '%s\n' "${AGENT_ID}" > /opt/tb2-agent.id; \
+    touch /opt/tb2-agent.ok; \
+    rm -rf /tmp/env_install_agent.sh /tmp/agent-extra
+
+ENV TB2_AGENT_PREBUILT=1
+ENV TB2_AGENT_ID=${AGENT_ID}
+LABEL tb2.agent=${AGENT_ID}
+LABEL tb2.common_env=${BASE_IMAGE}

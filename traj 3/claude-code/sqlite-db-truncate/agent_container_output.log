@@ -1,0 +1,35 @@
+
+===== agent attempt container=tb2-5bd643-sqlite-db-truncate-claude-code-age-3a0e0d82 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 900s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=900s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Recovered all 10 rows and wrote `/app/recover.json`.
+
+## How I recovered it
+
+The file is a single 4096-byte SQLite page whose **header area (offsets 0–~100) was destroyed/zeroed**, which is why `sqlite3` reports "file is not a database" — the page-type byte, b-tree header, and cell pointer array are all gone.
+
+However, the **cell content area (offsets 3913–4096) was intact**, and each `testword` string was stored in plaintext. I parsed these directly as SQLite leaf-table cells: each cell is `[payload_size varint][rowid varint][record]`, and each record decodes as `[NULL, word TEXT, value]`. Walking the content area bottom-up yielded all 10 rows:
+
+| rowid | word | value |
+|---|---|---|
+| 1 | testword00 | 1 |
+| 2 | testword01 | 2 |
+| 3 | testword02 | 10 |
+| 4 | testword03 | 25 |
+| 5 | testword04 | 42 |
+| 6 | testword05 | 50 |
+| 7 | testword06 | 75 |
+| 8 | testword07 | 99 |
+| 9 | testword08 | 99.99 |
+| 10 | testword09 | 0.5 |
+
+Note: `testword08` and `testword09` are stored as 8-byte IEEE-754 doubles (99.99 and 0.5), while the others are stored as single-byte integers — that's why the values aren't monotonically increasing. All values were decoded bit-exactly from the stored bytes.
+Agent 阶段完成

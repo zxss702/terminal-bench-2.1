@@ -1,0 +1,35 @@
+
+===== agent attempt container=tb2-5bd643-break-filter-js-from-claude-code-age-75334480 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[1/3] 安装 Claude Code agent...
+[INFO][claude] installing claude from /claude-packages/linux-x64/claude...
+[INFO][claude] agent ready: /usr/local/bin/claude
+2.1.218 (Claude Code)
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 1200s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=1200s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+The solution works reliably. `/app/out.html` is created and, after being processed by the filter, still auto-triggers `alert(1)` in Chromium.
+
+## How the bypass works
+
+The filter (`filter.py`) does three things with BeautifulSoup's `html.parser`:
+1. Decomposes `<script>`/`<frame>`/`<iframe>`/`<object>`/`<embed>` tags
+2. Removes any attribute whose key starts with `"on"` (e.g. `onerror`, `onload`)
+3. Re-serializes the parsed tree
+
+The payload defeats all three:
+
+```html
+<svg><style><img src=x onerror=alert(1)></style></svg>
+```
+
+- **`html.parser` treats `<style>` contents as raw CDATA text**, so the `<img onerror=...>` inside it is never parsed into a tag — it stays a string of text. The filter therefore never creates an `img` element and never sees the `onerror` attribute, so it neither strips the handler nor the `img`. It re-emits the block verbatim.
+- When Chrome parses the filtered output, it encounters `<svg>` then `<style>`. Per the HTML5 spec, a `<style>` start tag in **foreign (SVG) content** causes the parser to pop back into HTML content, so the browser then parses the `<img>` normally and executes `onerror` — which fires **automatically** when the image fails to load, with no user interaction.
+
+The alert fires with text `"1"`, which the test checks via `EC.alert_is_present()`.
+Agent 阶段完成

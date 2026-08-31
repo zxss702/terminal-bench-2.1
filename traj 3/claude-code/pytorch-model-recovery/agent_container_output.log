@@ -1,0 +1,32 @@
+
+===== agent attempt container=tb2-5bd643-pytorch-model-recove-claude-code-age-ce1a1f02 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 900s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=900s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+All success criteria are met. Final verification summary:
+
+## Results
+
+**Reconstructed architecture** (`RecoveredModel`): a seq2seq encoder-decoder Transformer matching the state dict exactly:
+- `embedding` = Linear(64→128), `pos_encoder` = sinusoidal positional encoding buffer `pe` (1,5000,128)
+- `transformer_encoder` = 3-layer TransformerEncoder, d_model=128, nhead=8, FFN=256
+- `transformer_decoder` = 1-layer TransformerDecoder
+- `output_layer` = Linear(128→64)
+
+**Verification against all 4 criteria:**
+1. ✅ `/app/model.pt` (TorchScript) loads original `weights.pt` with no errors.
+2. ✅ State dicts differ **only** in `output_layer.weight` and `output_layer.bias` — no keys missing or added.
+3. ✅ MSE decreased: **1.554804 → 0.066852** (~23× lower).
+4. ✅ `/app/weights.pt` untouched.
+
+**Tuning approach:** The output layer is a linear head on the frozen Transformer features. I froze the entire network, extracted the pre-output-layer activations for the dataset, and solved for the new `output_layer` weights in closed form via least squares (with tiny L2 ridge for stability). This yields the globally optimal linear output layer for the frozen features, guaranteeing the MSE is minimized.
+
+The tuned model is saved at `/app/model.pt` and `weights.pt` is unmodified.
+Agent 阶段完成

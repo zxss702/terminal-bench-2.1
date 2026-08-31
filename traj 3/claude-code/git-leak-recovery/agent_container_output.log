@@ -1,0 +1,35 @@
+
+===== agent attempt container=tb2-5bd643-git-leak-recovery-claude-code-age-e9f99368 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 900s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=900s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+All cleaning steps verified. Here's the summary:
+
+## Done
+
+**1. Recovered the secret**
+The secret was `secret[lost_and_found_in_git]`, recovered from an orphaned commit `6b4c75c` ("feat: add scratch notes") that had been reset away but still lived in the reflog. Written to `/app/secret.txt`.
+
+**2. Cleaned up the repo**
+The secret existed only in the dangling commit `6b4c75c` and its blob `52d18a...`. I:
+- Expired the reflog (`git reflog expire --expire=now --all`) — this removed the reference keeping the orphaned commit alive
+- Ran `git gc --prune=now --aggressive` to purge the unreachable commit and blob from the object database
+
+Verification confirms:
+- The secret blob `52d18a` no longer exists in the object DB
+- No `secret[...]` string or `lost_and_found` string is findable anywhere under `.git/`
+- Reflog is empty
+- `git fsck` reports no dangling objects
+
+**3. Irrelevant files untouched**
+Current working tree and `master` history (`README.md` plus the two `chore: init` commits) are completely unchanged — only the orphaned commit that held the secret was removed. Commit messages and the README were never modified.
+
+Note: the branching was done on a local repo; if this were pushed to a remote, the secret would still exist on the remote and would need rotation. Also, since the secret was actually committed at one point, treat it as compromised regardless — rotate the real credential.
+Agent 阶段完成

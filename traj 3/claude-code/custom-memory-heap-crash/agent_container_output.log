@@ -1,0 +1,37 @@
+
+===== agent attempt container=tb2-5bd643-custom-memory-heap-c-claude-code-age-be067798 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 1800s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=1800s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Fixed. The crash is gone and Valgrind reports 0 errors, 0 leaks.
+
+## Diagnosis
+
+The bug is a heap-lifetime mismatch between the program's custom heap and the in-house (modified) libstdc++, which only manifests under `-DNDEBUG` (release).
+
+**Modified libstdc++ behavior:** Under `NDEBUG`, the lazy facet registry (`_Facet_Register_impl` in `locale_init.cc`) allocates facet memory through the global `operator new` / `new char[256]`. Under the debug build it uses raw `std::malloc`/`std::free` instead. The registration fires the **first time a facet is used at runtime** (via `__try_use_facet`).
+
+**The timeline under release:**
+1. Static init: iostreams cache their facets, but `_Facet_Register_impl` early-returns (static-init marker not yet set) — no allocations.
+2. `app.init()` sets `g_custom_heap`, making the custom bump-allocator the target of all `operator new`.
+3. `std::cout` / formatting in `run()` triggers `_Facet_Register_impl()`, which `new`s 5 `_Fac_node`s + 5×256 bytes **into the custom heap buffer**.
+4. End of `main`: `Application::~Application()` → `shutdown()` frees the entire 10 MB custom heap buffer and nulls `g_custom_heap`.
+5. **After** main returns, the static destructor `_Fac_tidy_reg_t::~_Fac_tidy_reg_t()` frees those same facet pointers. With `g_custom_heap` now null, `::operator delete`/`delete[]` calls `std::free()` on pointers inside the already-freed custom heap → double-free/use-after-free → SIGSEGV.
+
+Debug never crashes because its facet code never touches the custom heap.
+
+## Fix (`user.cpp` only)
+
+`user_init()` runs **before** `g_custom_heap` is activated by main.cpp, so I force the facet registration to happen there — with the heap still null, all facet memory lands on the **real system heap**, matching the `std::free()` used at static destruction.
+
+The trigger is an actual stream insertion (`oss << 1`) with the result read back (`oss.str()`), because a bare `std::use_facet<...>` returning an unused reference was **dead-code-eliminated** at `-O2` and never executed the registration.
+
+**Changed files:** only `/app/user.cpp`. Both release and debug build and run cleanly; release passes Valgrind with no leaks.
+Agent 阶段完成

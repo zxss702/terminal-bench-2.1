@@ -1,0 +1,30 @@
+
+===== agent attempt container=tb2-5bd643-break-filter-js-from-claude-code-age-ced283b4 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 1200s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=1200s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Done. `/app/out.html` is created and verified to fire an `alert()` even after being processed by the filter.
+
+## How it bypasses the filter
+
+The crux is a **namespace divergence between BeautifulSoup and Chromium**:
+
+- **BeautifulSoup's `html.parser`** treats any `<style>` element as raw-text (CDATA), regardless of context. So the payload `<svg><style><img src=x onerror=alert(1)>` never sees the inner `<img>` — it's captured as *text* inside `<style>`. That means the filter's on-handler removal (`if attr.startswith("on")`) and tag decomposition never touch the `onerror`, and the `<img>` isn't even parsed as a tag.
+
+- **Chromium**, however, only treats `<style>` as a raw-text element when it's in the **HTML namespace**. Inside `<svg>`, `<style>` is an ordinary SVG element, so Chromium parses its content normally — turning the literal text `<img src=x onerror=alert('XSS_BYPASS')>` into a real `<img>` tag with a live `onerror`. `src=x` fails to load, so `onerror` fires immediately with no interaction.
+
+The filtered output keeps that string verbatim because BeautifulSoup just re-emits the style's raw text:
+
+```
+<style><img src=x onerror=alert('XSS_BYPASS')></style>
+```
+
+I confirmed this with a full replication of `test_outputs.py` (CLI filter → headless Chromium → alert present with text `XSS_BYPASS`). I also ruled out the alternatives — script-tag obfuscation, on-handler case/entity tricks, `javascript:` URLs, encoding plays, and other mXSS payloads — none survive filtering, but this one does.
+Agent 阶段完成

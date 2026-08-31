@@ -1,0 +1,44 @@
+
+===== agent attempt container=tb2-5bd643-qemu-startup-claude-code-age-447e7d63 =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 900s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=900s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Done. Alpine is booted and ready.
+
+## Summary
+
+The `/app/alpine.iso` Alpine 3.19 guest is running in QEMU in the background and sitting at the login prompt. I confirmed the live boot reached:
+
+```
+Welcome to Alpine Linux 3.19
+
+Kernel 6.6.4-1-lts on an x86_64 (/dev/ttyS0)
+
+localhost login:
+```
+
+**You can now connect and log in:**
+```
+telnet 127.0.0.1 6665
+```
+
+### What I did
+The Alpine ISO boots VGA-by-default, so to get the login prompt onto a serial line (reachable over telnet) I:
+1. **Extracted the boot files** from the ISO with a small ISO9660 parser I wrote (`/tmp/isoparse.py`), since no ISO tooling (mount/7z/bsdtar) was available in this container and the ISO uses Rock Ridge `NM` entries for names — pulled `boot/vmlinuz-lts` and `boot/initramfs-lts`.
+2. **Booted it directly** with `-kernel`/`-initrd` and `console=ttyS0,115200`, attaching the ISO as the CD-ROM (so the initramfs finds the apk repo) and the `alpine-disk.qcow2` as the virtual hard disk.
+3. **Exposed the serial console** on `telnet:127.0.0.1:6665,server,nowait`, running with `-display none -monitor none` so it stays headless in the background.
+4. **Polled the serial stream until the `login:` prompt appeared.**
+
+### Current state
+- QEMU process alive (pid 443), port 6665 open and accepting connections.
+- The guest is idle at `localhost login:` — go ahead and log in.
+
+The QEMU instance will keep running in the background. If you ever need to stop it, kill the QEMU process (e.g. `pkill qemu-system`).
+Agent 阶段完成

@@ -1,0 +1,38 @@
+
+===== agent attempt container=tb2-5bd643-feal-linear-cryptana-claude-code-age-a415828a =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 1800s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=1800s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+Success — all 100 ciphertexts decrypt correctly (round-trip verified). 
+
+## Summary
+
+I recovered the cipher's key and decrypted all ciphertexts.
+
+**The key (4 twenty-bit seeds):** `0x68e63, 0x62571, 0x1f61c, 0xb74a5`
+
+**How the attack works:**
+
+1. **Verified the cipher** by matching a compiled C implementation against the provided `feal` binary, and confirmed the pairs are random (not structured), so chosen-plaintext differential attacks don't apply.
+
+2. **Key structural insight — `F` is a bijection.** The FEAL round function's `g` chain (`rot2`) is invertible byte-by-byte, so `F` has *exactly one* preimage per value. This let me invert `F` directly (`Finv`), so every intermediate value is uniquely determined once enough keys are known:
+   - Round 3: `l3 = r4 ⊕ F(r3 ⊕ K3)` depends only on **K3**
+   - Round 0: `l2 = L0 ⊕ F(r0 ⊕ K0)` depends only on **K0**
+   - Round 1: `F(l2 ⊕ K1) = l3 ⊕ l1` → `K1` recovered exactly
+   - Round 2: `F(l3 ⊕ K2) = r3 ⊕ l2` → `K2` recovered exactly
+
+3. **Fast exhaustive search over the 2^20 seed space per key** (no 2^40 blow-up): I build a lookup map from the K0-derived quantity `l2_0 ⊕ l2_1` to K0 seeds, then scan K3 seeds; the match value `Finv(T0) ⊕ Finv(T1)` uniquely identifies the K0 candidate, so the search is ~2^20 hash lookups (ran in **0.3 s**). The winning candidate is confirmed by full 4-round encryption of all 32 known plaintext→ciphertext pairs.
+
+4. **Verified independently** against the reference `feal` binary (all 32 pairs) and via round-trip re-encryption of all 100 ciphertexts.
+
+**Result:** `/app/plaintexts.txt` now contains the 100 decrypted plaintexts (matching the decimal format of the original files), each confirmed by re-encryption.
+
+Sources used for the FEAL-4 analysis approach: [Matsui's FEAL-4 linear/differential attacks](http://www.cs.sjsu.edu/faculty/stamp/crypto/PowerPoint_PDF/13_FEAL.pdf), [CA642 FEAL4 cryptanalysis reference](https://github.com/rnibhriain/cryptography-and-number-theory).
+Agent 阶段完成

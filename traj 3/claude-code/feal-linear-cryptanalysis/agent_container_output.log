@@ -1,0 +1,47 @@
+
+===== agent attempt container=tb2-5bd643-feal-linear-cryptana-claude-code-age-6f933d7c =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 1800s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=1800s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+All 100 ciphertexts decrypted correctly (0 mismatches on round-trip). The key is fully recovered and proven.
+
+## Result
+
+The 4 round-key seeds (each 20-bit) are:
+
+| Round | Seed (hex) | Round key (expanded) |
+|-------|-----------|----------------------|
+| K0 | `0x68E63` | `0xB24DCA68` |
+| K1 | `0x62571` | `0x0D14A358` |
+| K2 | `0x1F61C` | `0xA888FA20` |
+| K3 | `0xB74A5` | `0x5CC59C18` |
+
+**Verification:** Re-encrypting all 32 plaintexts from `pairs.txt` reproduces the ciphertexts exactly (`verify=1`), and decrypting the 100 ciphertexts in `ciphertexts.txt` then re-encrypting them all round-trips with **0 mismatches**. The answer is saved to `/app/plaintexts.txt`.
+
+## How the attack works (linear cryptanalysis)
+
+This is FEAL-4 with each 32-bit round key `expand(seed)`, `expand(x)=x⊕(x<<16)⊕(x·12345)` for a 20-bit seed.
+
+**Core observation — exact linear relations in the F function.** Since `g(a,b,x)=ROTL2(a+b+x)` rotates a sum left by 2, the rotation maps `bit 0` of the sum (which is carry-free, i.e. purely `a₀⊕b₀⊕x₀`) to output `bit 2`. This yields **deterministic (prob-1)** linear approximations of the F function. Searching the S-box, I found 8 such exact relations, e.g. input mask `0x01000000` → output mask `0x04010000`, and `0x01010101` → `0x00040000`.
+
+I confirmed these empirically to be exact (`eq=0` or `eq=N` over random inputs).
+
+**Recovering round keys by peeling.** Using the exact mask relations to telescope through the rounds (with the middle round inactive, so subkeys drop into a constant), I got a linear *constant* expression over the known plaintext/ciphertext pairs:
+
+- **K3** (last round): with `Δ=0x01000000, Γ=0x04010000`, the value `Γ·L0 ⊕ Δ·R0 ⊕ Δ·L3 ⊕ Γ·R3` is the **same for all pairs** exactly when the guessed K3 is correct. A single relation left ~94 candidates (pins ~13 bits), so I intersected **all 8 exact relations** → unique seed `0xB74A5`.
+- **K2**: analogous 2-round relation on `(S0, S2)` → unique `0x1F61C`.
+- **K1 and K0**: recovered **directly and exactly**. Once higher states are peeled, K1 must satisfy `F(L2⊕K1) = R2⊕R0` for every pair and K0 must satisfy `F(R0⊕K0) = L2⊕L0` — exact 20-bit brute-force checks (2²⁰ each). (Naive relation tests do *not* work here because `S1.right = S2.left` is independent of K1.)
+
+The whole recovery requires only the 32 known plaintext/ciphertext pairs, and each key stage is a 2²⁰ search — vastly cheaper than the 2⁸⁰ keyspace.
+
+Sources:
+- [FEAL-4 differential & linear attacks (Stamp)](http://www.cs.sjsu.edu/faculty/stamp/crypto/PowerPoint_PDF/13_FEAL.pdf)
+- [FEAL — Wikipedia](https://de.m.wikipedia.org/wiki/FEAL)
+Agent 阶段完成

@@ -1,0 +1,39 @@
+
+===== agent attempt container=tb2-5bd643-feal-differential-cr-claude-code-age-fd60ae3d =====
+[INFO] HTTP_PROXY=http://host.docker.internal:7897 pkg=http://host.docker.internal:3144 pip_cache=/root/.cache/pip
+[0/N] 公共依赖已预装在镜像中 (/opt/tb2-common-env.ok)，跳过完整 env_install_common.sh
+[INFO] Swift/browser: disabled (no toolchain top-up)
+[INFO] agent 已预装在镜像中 (/opt/tb2-agent.ok)，跳过安装
+[2/3] 配置 Claude settings...
+[3/3] 运行 Claude Code (timeout 1800s)...
+[INFO] 准备 Xvfb 显示环境 (所有 agent 相同)...
+[INFO] Xvfb started on DISPLAY=:99
+[INFO] agent-only timeout=1800s (task.toml [agent].timeout_sec; env install not counted)
+[INFO] agent_phase_started written
+The attack is complete and verified. Here's a summary:
+
+## Solution
+
+**`/app/attack.py`** implements `attack(encrypt_fn)` → returns the `uint32` value of `key[5]`.
+
+### The attack — chosen-plaintext differential cryptanalysis
+
+**Key observations about the cipher:**
+- It's a 4-round Feistel with subkeys K2–K5, plus whitening K0/K1.
+- Each round maps an input difference `(A, B) → (B, A ^ dF)`, where `dF = F(x) ^ F(x ^ B)` is the **key-independent** differential of the F function.
+- Each 32-bit key comes from a **16-bit seed** via `key[i] = (seed * 1234567) & 0xffffffff`, so there are only 65,536 candidates for K5.
+
+**The differential:**
+- Choosing the plaintext difference `DP = 0x80808080_80808080` drives a characteristic through rounds 1–3. Simulation (independent of the key) shows the difference reaching round 4 has a **constant left half `a3 = 0x02000002`** (~100% of pairs); only the right half `b3` varies with the data.
+
+**Recovering K5:** From the output structure (`Lout = L4`, `Rout = R3 ^ L4`), for _any_ pair:
+- `R3 = Rout ^ Lout` (known input to round-4 F)
+- `b3 = dRout ^ dLout` (known F input difference)
+- `dF4 = dLout ^ a3` (known F output difference)
+
+This gives the exact equation `F(R3 ^ K5) ^ F(R3 ^ b3 ^ K5) == dF4`, which the **true K5 satisfies** but a wrong candidate satisfies only with probability ~2⁻³². The attack enumerates the 65,536 seed-derived K5 candidates and scans pairs until one matches, then confirms it over 100 fresh pairs (the true key scores ~100/100; wrong keys score ~0, so a threshold of 20 cleanly separates them).
+
+### Verification
+- Successful across hundreds of random keys: **200/200 stress trials passed**, plus a further 30/30 validation.
+- Runs well within the time limit: **max ~0.6s, avg ~0.23s** (limit is 30s).
+Agent 阶段完成
